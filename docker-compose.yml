@@ -1,0 +1,2 @@
+# Triage Engine Docker Compose configuration
+# Services (PostgreSQL + pgvector, Redis) to be configured in Phase 0

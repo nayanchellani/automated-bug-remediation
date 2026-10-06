@@ -1,0 +1,34 @@
+# Triage Engine Git Ignore
+
+# Project Memory File
+memory.md
+
+# Node dependencies & logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python virtualenvs & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
