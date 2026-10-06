@@ -1,2 +1,14 @@
-# Triage Engine Docker Compose configuration
-# Services (PostgreSQL + pgvector, Redis) to be configured in Phase 0
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: triage
+      POSTGRES_PASSWORD: triage
+      POSTGRES_DB: triage
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

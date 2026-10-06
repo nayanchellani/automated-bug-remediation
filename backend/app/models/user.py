@@ -1,9 +1,5 @@
 from sqlalchemy import Column, Integer, String
-from sqlalchemy.orm import declarative_base
-try:
-    from app.db.session import Base
-except ImportError:
-    Base = declarative_base()
+from app.db.session import Base
 
 class User(Base):
     __tablename__ = "users"
