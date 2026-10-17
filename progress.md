@@ -46,54 +46,81 @@
 | `POST /auth/logout` | ✅ | Deletes refresh cookie |
 | `get_current_user` dependency | ✅ | JWT decode → user lookup, reusable across all protected routes |
 | `get_db` dependency | ✅ | Yields `AsyncSession`, auto-closes after request |
-| **Tenant scoping** | ❌ | `tenants` table not created. Users are not linked to a tenant yet. Required before Feature 2. |
-| **Projects model** | ❌ | Not created yet |
+| **User scoping** | ✅ | Scoped directly by `user_id` |
+| **Projects model** | ✅ | `id`, `name`, `user_id`, `created_at` in `models/project.py` |
 
 ### Frontend
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Axios API client (`lib/api.ts`) | ✅ | `withCredentials: true`, attaches Bearer token from localStorage |
+| Axios API client (`lib/api.ts`) | ✅ | `withCredentials: true`, attaches Bearer token from in-memory AuthContext |
 | Auto token refresh interceptor | ✅ | On 401, hits `/auth/refresh`, retries original request |
-| Login page (`pages/LoginPage.tsx`) | ✅ | Form → `POST /auth/login` → saves token → redirects to `/dashboard` |
+| Login page (`pages/LoginPage.tsx`) | ✅ | Form → `POST /auth/login` → sets in-memory token → redirects to `/dashboard` |
 | Signup page (`pages/SignupPage.tsx`) | ✅ | Register → auto-login → redirects to `/dashboard` |
-| `PrivateRoute` guard | ✅ | Redirects to `/login` if no `access_token` in localStorage |
-| React Router setup (`App.tsx`) | ✅ | `/login`, `/signup`, `/dashboard` routes |
-| Dashboard page (`pages/DashboardPage.tsx`) | ⚠️ | Placeholder only — shows "Coming soon" |
+| `PrivateRoute` guard | ✅ | Checks in-memory token, handles silent token refresh on boot |
+| React Router setup (`App.tsx`) | ✅ | `/login`, `/signup`, `/dashboard` routes wrapped with `AuthProvider` |
+| Dashboard page (`pages/DashboardPage.tsx`) | ✅ | Project view, API Keys table, revoke action, modal with copy button & warning |
 | Design system — Vercel aesthetic | ✅ | Dark mode, 1px borders, high-contrast white CTAs, Inter font |
 
 ---
 
 ## Feature 2 — API Keys & Error Ingestion
-❌ Not started. See plan below.
+✅ Completed.
 
-**What needs to be built:**
-- `tenants` model + link users to tenant *(prerequisite)*
-- `projects` model (belongs to tenant)
-- `api_keys` model — prefix + hashed key, `project_id`, `last_used_at`, `revoked_at`
-- `error_events` model — fingerprint, message, stack, file, line, count, first/last seen
-- `POST /projects/{id}/api-keys` — generate `tk_live_...` key (shown raw once)
-- `POST /ingest/error` — SDK-facing endpoint, authenticates via API key header
-- SHA-256 stack trace fingerprinting + dedup upsert logic
-- `slowapi` rate limiting on ingest endpoint (100 req/min per key)
-- `sdk-node/` — `@triage/sdk` npm package skeleton
-- `sdk-python/` — `triage-sdk` pip package skeleton
+**Implementation Status:**
+- `projects` model & full CRUD endpoints (`POST /projects`, `GET /projects`, `GET /projects/{id}`, `DELETE /projects/{id}`) ✅
+- Atomic user + default project creation on registration (`user_service.py`) ✅
+- `api_keys` model (`id`, `project_id`, `prefix`, `key_hash`, `created_at`, `last_used_at`, `revoked_at`) ✅
+- `generate_api_key()` (`tk_live_...` with SHA-256 hash & prefix) ✅
+- `POST /projects/{id}/api-keys` — creates key, returns raw key once, enforces 5 active keys limit with row lock (`with_for_update`) ✅
+- `GET /projects/{id}/api-keys` — returns prefix, timestamps, revoked status (never hash) ✅
+- `DELETE /projects/{id}/api-keys/{key_id}` — strict project & key ownership verification, sets `revoked_at` ✅
+- `get_project_from_api_key` dependency — reads `X-API-Key`, throttles `last_used_at` writes (>60s), returns constant 401 on failure ✅
+- Machine-facing `GET /sdk/validate` endpoint for SDK init check ✅
+- `001_initial_schema` migration includes `CREATE EXTENSION IF NOT EXISTS vector;` on Postgres ✅
+- Docker Compose includes `db_test` service on port 5433 with `tmpfs` ✅
+- Strict PostgreSQL test requirement in `conftest.py` (no silent SQLite fallback) ✅
+- `error_events` model & migration (`002_error_events.py`) with unique constraint on `(project_id, fingerprint)` and index on `(project_id, last_seen)` ✅
+- Server-side authoritative fingerprinting (`app/core/fingerprint.py`) picking first in-app frame or normalized message with IDs/numbers stripped ✅
+- `POST /ingest/error` route with `pg_insert` upsert (increments count, updates `last_seen` and latest message) ✅
+- `slowapi` rate limiting on ingest endpoint (100 req/min per key) ✅
+- 64KB Content-Length payload protection (HTTP 413) ✅
+- `GET /projects/{id}/incidents` endpoint with ownership check, ordered by `last_seen DESC` ✅
+- Frontend Live Incidents table polling every 4s, with install code snippet empty state and tabs ✅
+- `@triage/sdk` Node.js SDK (`sdk-node/`) with relative path frame parsing and `in_app` detection ✅
+- Express demo app (`demo-app/`) with crashing endpoints and middleware integration ✅
+- Integration test suite (`test_api_keys.py`, `test_ingest.py`) ✅
 
 ---
 
-## Features 3–10
+## Feature 3 — Project Snapshot, Structure & Libraries (Non-GitHub)
+✅ Completed.
+
+**Implementation Status:**
+- `Snapshot` and `Dependency` models ([snapshot.py](file:///d:/code/automated-bug-remediation/automated-bug-remediation/backend/app/models/snapshot.py), [dependency.py](file:///d:/code/automated-bug-remediation/automated-bug-remediation/backend/app/models/dependency.py)) & migration `003_snapshots_dependencies.py` ✅
+- OSV ecosystem names (`npm`, `PyPI`) used directly in database models ✅
+- In-memory hostile zip parser ([snapshots.py](file:///d:/code/automated-bug-remediation/automated-bug-remediation/backend/app/api/routers/snapshots.py)): 20MB archive limit, 100MB uncompressed limit, 5,000 file cap, zip-slip protection, server-side secret filtering (`.env*`, `*.pem`, `*.key`, `id_rsa*`) ✅
+- Server-side manifest parser ([manifest_parser.py](file:///d:/code/automated-bug-remediation/automated-bug-remediation/backend/app/core/manifest_parser.py)) for `package-lock.json`, `package.json`, and `requirements.txt` with lockfile priority ✅
+- Project snapshot retention pruning (keeps latest 3 snapshots & removes old zip archives) ✅
+- Owner-verified endpoints (`GET /projects/{id}/snapshots/latest`, `GET /projects/{id}/dependencies`) ✅
+- `triage push` CLI in `@triage/sdk` ([bin/triage.js](file:///d:/code/automated-bug-remediation/automated-bug-remediation/sdk-node/bin/triage.js)) with hard excludes (`node_modules`, `.git`, `.env*`, etc.) and multipart upload ✅
+- Frontend **Structure** tab with collapsible file tree, size badges, and `npx triage push` empty state ✅
+- Frontend **Libraries** tab displaying package name, exact/approximate version, dev/prod badge, ecosystem, and source manifest ✅
+- Backend integration tests ([test_snapshots.py](file:///d:/code/automated-bug-remediation/automated-bug-remediation/backend/tests/test_snapshots.py)) covering valid upload, zip-slip rejection, secret filtering, and cross-user isolation ✅
+
+---
+
+## Features 4–10
 ❌ Not started. Defined in `memory.md`.
 
 ---
 
 ## Known Issues / Tech Debt
 
-| Issue | Priority |
-|-------|----------|
-| `user_service.py` has fallback stub for password hashing — should import `core/security` cleanly | Medium |
-| `docker-compose.yml` is empty — need PostgreSQL + pgvector + Redis | High (before deploy) |
-| `DATABASE_URL` is SQLite — must switch to `postgresql+asyncpg` before Feature 3+ | High |
-| No tenant model — blocks Feature 2 properly | High |
-| Dashboard is a placeholder | Low |
-| No email validation beyond Pydantic `EmailStr` | Low |
-| `SECRET_KEY` is hardcoded default in `config.py` — must be changed via `.env` before deploy | High |
+| Issue | Priority | Status |
+|-------|----------|--------|
+| `user_service.py` fallback stub | Medium | Resolved |
+| `docker-compose.yml` db and db_test configuration | High | Resolved |
+| `DATABASE_URL` PostgreSQL switch | High | Resolved |
+| User and Project scoping | High | Resolved |
+| Dashboard UI & Token Security in memory | High | Resolved |
