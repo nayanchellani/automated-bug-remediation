@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import relationship
 from app.db.session import Base
 
 class User(Base):
@@ -7,3 +8,6 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
+
+    projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
+
