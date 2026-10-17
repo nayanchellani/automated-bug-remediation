@@ -10,6 +10,11 @@ from alembic import context
 from app.core.config import settings
 from app.db.session import Base
 import app.models.user  # noqa: F401 — ensures User table is registered on Base.metadata
+import app.models.project  # noqa: F401
+import app.models.api_key  # noqa: F401
+import app.models.error_event  # noqa: F401
+import app.models.snapshot  # noqa: F401
+import app.models.dependency  # noqa: F401
 
 config = context.config
 

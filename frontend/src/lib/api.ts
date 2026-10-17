@@ -72,4 +72,81 @@ export const authApi = {
     api.post<TokenResponse>('/auth/refresh'),
 }
 
+export interface Project {
+  id: number
+  name: string
+  user_id: number
+  created_at: string
+}
+
+export interface ApiKeyItem {
+  id: number
+  project_id: number
+  prefix: string
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
+export interface ApiKeyCreatedResponse {
+  id: number
+  project_id: number
+  prefix: string
+  raw_key: string
+  created_at: string
+}
+
+export interface Incident {
+  id: number
+  name: string
+  message: string
+  file: string | null
+  line: number | null
+  count: number
+  first_seen: string
+  last_seen: string
+}
+
+export interface SnapshotFile {
+  path: string
+  size: number
+}
+
+export interface Snapshot {
+  id: string
+  project_id: number
+  created_at: string
+  sha256: string
+  file_count: number
+  total_bytes: number
+  tree: SnapshotFile[]
+}
+
+export interface Dependency {
+  id: string
+  snapshot_id: string
+  ecosystem: string
+  name: string
+  version: string | null
+  is_dev: boolean
+  source_file: string
+}
+
+export const projectApi = {
+  list: () => api.get<Project[]>('/projects'),
+  create: (name: string) => api.post<Project>('/projects', { name }),
+  get: (id: number) => api.get<Project>(`/projects/${id}`),
+  delete: (id: number) => api.delete<{ message: string; id: number }>(`/projects/${id}`),
+  listApiKeys: (projectId: number) => api.get<ApiKeyItem[]>(`/projects/${projectId}/api-keys`),
+  createApiKey: (projectId: number) => api.post<ApiKeyCreatedResponse>(`/projects/${projectId}/api-keys`),
+  revokeApiKey: (projectId: number, keyId: number) => api.delete<{ message: string; id: number }>(`/projects/${projectId}/api-keys/${keyId}`),
+  listIncidents: (projectId: number, limit = 20, offset = 0) =>
+    api.get<Incident[]>(`/projects/${projectId}/incidents?limit=${limit}&offset=${offset}`),
+  getLatestSnapshot: (projectId: number) =>
+    api.get<Snapshot>(`/projects/${projectId}/snapshots/latest`),
+  getDependencies: (projectId: number) =>
+    api.get<Dependency[]>(`/projects/${projectId}/dependencies`),
+}
+
 export default api
+

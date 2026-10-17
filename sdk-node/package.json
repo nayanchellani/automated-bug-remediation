@@ -1,0 +1,22 @@
+{
+  "name": "@triage/sdk",
+  "version": "0.1.0",
+  "description": "Official Node.js SDK for Triage Engine runtime error telemetry",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "triage": "./bin/triage.js"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/archiver": "^8.0.0",
+    "@types/node": "^26.6.5",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "archiver": "^8.0.0",
+    "ignore": "^7.0.12"
+  }
+}
