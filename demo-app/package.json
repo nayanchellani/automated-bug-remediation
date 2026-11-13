@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@triage/sdk": "file:../sdk-node",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "triage": "^0.0.5"
   }
 }

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
   projectApi,
-  Project,
-  ApiKeyItem,
-  ApiKeyCreatedResponse,
-  Incident,
-  Snapshot,
-  Dependency,
-  SnapshotFile,
+  type Project,
+  type ApiKeyItem,
+  type ApiKeyCreatedResponse,
+  type Incident,
+  type Snapshot,
+  type Dependency,
+  type SnapshotFile,
 } from '../lib/api'
 import {
   Key,

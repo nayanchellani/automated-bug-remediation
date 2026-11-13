@@ -22,7 +22,9 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config
-    if (error.response?.status === 401 && !original._retry) {
+    // Only attempt refresh if this was NOT already an auth endpoint (to prevent refresh loops)
+    const isAuthEndpoint = original?.url?.includes('/auth/')
+    if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
       original._retry = true
       try {
         const { data } = await api.post<TokenResponse>('/auth/refresh')
@@ -31,7 +33,9 @@ api.interceptors.response.use(
         return api(original)
       } catch {
         setApiToken(null)
-        window.location.href = '/login'
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/signup') {
+          window.location.href = '/login'
+        }
       }
     }
     return Promise.reject(error)
