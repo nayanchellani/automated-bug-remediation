@@ -23,7 +23,7 @@
 | Tailwind CSS v4 | ✅ | Configured with `@theme` design tokens |
 | Frontend dependencies | ✅ | `axios`, `react-router-dom`, `lucide-react`, `clsx` installed |
 | Frontend API URL | ✅ | `VITE_API_BASE_URL` (default `http://localhost:8000`), see `frontend/.env.example` |
-| **Database: PostgreSQL + pgvector** | ✅ | Required for the app and the tests. The SQLite fallback was removed; `backend/triage.db` is a stale leftover file |
+| **Database: PostgreSQL + pgvector** | ✅ | Required for the app and the tests. The SQLite fallback was removed; `backend/triage.db` is a stale leftover file, now gitignored and untracked |
 
 ---
 
@@ -174,12 +174,16 @@ Resolved:
 | User and Project scoping | High | Resolved |
 | Dashboard UI & Token Security in memory | High | Resolved |
 | `triage` (unrelated public npm package) in `demo-app` | Medium | Resolved |
+| Identical re-pushes shared one `{sha}.zip`; pruning deleted the newest snapshot's archive | High | Resolved (prune skips paths kept snapshots use) |
+| Copy button threw on non-secure origins | Low | Resolved (`execCommand` fallback) |
+| Vite HMR in Docker on Windows | Low | Resolved, untested (`CHOKIDAR_USEPOLLING=true` enables `usePolling`) |
+| Frontend lint warnings (`set-state-in-effect`, `only-export-components`) | Low | Resolved (loading flags set in the render-time reset; `useAuth` split into `context/useAuth.ts`; one targeted `oxlint-disable-next-line` on the fetch effect) |
+| `.gitignore` missing `.env.*`, `backend/storage/`, `*.db` | High | Resolved (`.env.example` still tracked) |
 
 Open (found in the latest code review, not yet fixed):
 
 | Area | Issue | Priority |
 |------|-------|----------|
-| Backend / snapshots | Identical re-pushes share one archive file (`{sha}.zip`). Pruning an old snapshot deletes the file the newest snapshot still points to, so a later scan fails with "archive missing" | High |
 | Backend / snapshots | Secret filtering only hides files from the tree; the raw uploaded zip, including `.env`/`.pem` files from a non-standard client, is still written to `storage/` | High |
 | Backend / snapshots | Multipart body is fully buffered before the 20MB check; there is no HTTP-level size limit on `/snapshots` | Medium |
 | Backend / snapshots | Dependency `version` is `String(100)` and `source_file` `String(300)`; a long git URL version or deep path makes the upload fail with a 500 | Medium |
@@ -196,6 +200,5 @@ Open (found in the latest code review, not yet fixed):
 | Backend / db | `echo=True` logs every SQL statement and its parameters; deleting a project loads all child rows through the ORM cascade | Low |
 | SDK / Node | Payloads are not truncated to server limits (message 2000, stack 16000), so long errors are rejected with a 422 and dropped silently; queued errors are lost on exit | Medium |
 | SDK / CLI | Hard excludes are anchored to the project root: nested `node_modules`, `dist` and `build` folders in monorepos are still archived | Medium |
-| Frontend | `navigator.clipboard` is undefined on non-secure origins, so the copy button throws; Vite HMR may not fire in Docker on Windows without `usePolling` | Low |
-| Infra | Dev-only containers (`--reload`, Vite dev server), `SECRET_KEY` in `docker-compose.yml`, `backend/triage.db` and a snapshot zip under `backend/storage/` are tracked in git | Medium |
+| Infra | Dev-only containers (`--reload`, Vite dev server) and `SECRET_KEY` in `docker-compose.yml`. `backend/triage.db` and `backend/storage/` were untracked from git (files still on disk; `backend/triage.db` can be deleted) | Medium |
 | Housekeeping | `memory.md` is listed in `.gitignore` but referenced as documentation; `README.md` is empty | Low |

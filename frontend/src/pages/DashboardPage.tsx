@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import {
   projectApi,
   type Project,
@@ -246,7 +246,6 @@ export default function DashboardPage() {
   // the previous project can never overwrite the current project's data.
   const loadApiKeys = useCallback(async (projectId: number, signal?: AbortSignal) => {
     try {
-      setLoadingKeys(true)
       const res = await projectApi.listApiKeys(projectId, signal)
       if (signal?.aborted) return
       setApiKeys(res.data)
@@ -261,7 +260,6 @@ export default function DashboardPage() {
   const loadIncidents = useCallback(
     async (projectId: number, limit: number, signal?: AbortSignal, isInitial = false) => {
       try {
-        if (isInitial) setLoadingIncidents(true)
         // Ask for one extra row so we know whether more incidents exist
         const res = await projectApi.listIncidents(projectId, limit + 1, 0, signal)
         if (signal?.aborted) return
@@ -280,7 +278,6 @@ export default function DashboardPage() {
 
   const loadSnapshot = useCallback(async (projectId: number, signal?: AbortSignal) => {
     try {
-      setLoadingSnapshot(true)
       const res = await projectApi.getLatestSnapshot(projectId, signal)
       if (signal?.aborted) return
       setSnapshot(res.data)
@@ -294,7 +291,6 @@ export default function DashboardPage() {
 
   const loadDependencies = useCallback(async (projectId: number, signal?: AbortSignal) => {
     try {
-      setLoadingDependencies(true)
       const res = await projectApi.getDependencies(projectId, signal)
       if (signal?.aborted) return
       setDependencies(res.data)
@@ -327,6 +323,12 @@ export default function DashboardPage() {
     setIncidentLimit(INCIDENT_PAGE_SIZE)
     setSnapshot(null)
     setDependencies([])
+    // Loading flags are raised here too, so the fetch effect never sets state synchronously
+    const loading = projectId !== null
+    setLoadingKeys(loading)
+    setLoadingIncidents(loading)
+    setLoadingSnapshot(loading)
+    setLoadingDependencies(loading)
   }
 
   useEffect(() => {
@@ -334,6 +336,8 @@ export default function DashboardPage() {
 
     const controller = new AbortController()
     projectControllerRef.current = controller
+    // Loaders only set state after an await, so nothing runs synchronously in this effect
+    // oxlint-disable-next-line react/set-state-in-effect
     loadApiKeys(projectId, controller.signal)
     loadIncidents(projectId, INCIDENT_PAGE_SIZE, controller.signal, true)
     loadSnapshot(projectId, controller.signal)
