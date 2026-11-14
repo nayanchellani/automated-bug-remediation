@@ -1,0 +1,13 @@
+{
+  "name": "triage-analyzer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static JS/TS/JSON analyzer invoked by the Triage backend. Parses only, never executes project code.",
+  "main": "analyze.js",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@babel/parser": "8.1.2",
+    "@babel/traverse": "8.1.2",
+    "globals": "17.14.0"
+  }
+}

@@ -8,15 +8,29 @@
     "triage": "./bin/triage.js"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc && esbuild src/browser.ts --bundle --format=iife --global-name=Triage --target=es2018 --minify --outfile=dist/triage-browser.global.js",
+    "test": "node test.js && node test-browser.js"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",
     "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "archiver": "^8.0.0",
     "ignore": "^7.0.12"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./browser.global.js": "./dist/triage-browser.global.js",
+    "./package.json": "./package.json"
   }
 }

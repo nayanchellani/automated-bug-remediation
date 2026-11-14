@@ -9,6 +9,6 @@
   "dependencies": {
     "@triage/sdk": "file:../sdk-node",
     "express": "^4.19.2",
-    "triage": "^0.0.5"
+    "sucrase": "^3.35.1"
   }
 }

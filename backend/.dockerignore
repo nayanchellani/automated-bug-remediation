@@ -4,5 +4,6 @@ __pycache__/
 .pytest_cache/
 triage.db
 storage/
+analyzer/node_modules/
 .env
 

@@ -13,16 +13,17 @@
 |------|--------|-------|
 | Monorepo folder structure created | ✅ | `backend/`, `frontend/`, `sdk-node/`, `sdk-python/`, `sandbox/`, `demo-app/`, `eval/` |
 | `memory.md` architecture document | ✅ | Full tech stack, data model, roadmap documented |
-| `docker-compose.yml` scaffolded | ⚠️ | File exists but is empty — PostgreSQL + pgvector + Redis not configured yet |
+| `docker-compose.yml` | ✅ | `db` (pgvector pg16, healthcheck), `db_test` (port 5433, tmpfs), `backend`, `frontend`. Redis is not configured (not needed yet) |
+| Dockerfiles | ✅ | `backend/Dockerfile` is multi-stage: it copies a Node 22 binary plus the analyzer's `node_modules` into the Python 3.12 image and runs `alembic upgrade head` on start. `frontend/Dockerfile` runs the Vite dev server. Both are dev-oriented (`--reload`, no production build) |
 | FastAPI app bootstrapped (`main.py`) | ✅ | `lifespan` context manager, health check endpoint |
 | SQLAlchemy async engine (`db/session.py`) | ✅ | `create_async_engine`, `async_sessionmaker`, `Base` |
 | Pydantic settings (`core/config.py`) | ✅ | `DATABASE_URL`, `SECRET_KEY`, token expiry settings, reads from `.env` |
-| CORS middleware | ✅ | Allows `localhost:5173` with credentials |
+| CORS middleware | ✅ | Origins come from `CORS_ORIGINS` (default `localhost:5173,localhost:3000`), credentials allowed |
 | React + Vite + TypeScript frontend | ✅ | Vite project scaffolded |
 | Tailwind CSS v4 | ✅ | Configured with `@theme` design tokens |
 | Frontend dependencies | ✅ | `axios`, `react-router-dom`, `lucide-react`, `clsx` installed |
-| **Database: SQLite (dev)** | ✅ | `sqlite+aiosqlite:///./triage.db` — temp for local dev |
-| **Database: PostgreSQL + pgvector (prod)** | ❌ | Planned, not set up yet |
+| Frontend API URL | ✅ | `VITE_API_BASE_URL` (default `http://localhost:8000`), see `frontend/.env.example` |
+| **Database: PostgreSQL + pgvector** | ✅ | Required for the app and the tests. The SQLite fallback was removed; `backend/triage.db` is a stale leftover file |
 
 ---
 
@@ -110,12 +111,60 @@
 
 ---
 
-## Features 4–10
+## Feature 4 — Dependency Vulnerability Audit (OSV.dev)
+❌ Not started. Dependencies are parsed and stored (Feature 3), but nothing is checked against OSV yet.
+
+---
+
+## Feature 5 — Static Code Analysis (JS/TS only so far)
+⚠️ Partial. Backend done and tested; no dashboard UI yet.
+
+**Implementation Status:**
+- Node analyzer (`backend/analyzer/analyze.mjs`, Babel 8 parser) reports, each with file, line, column, severity, rule, message and a code snippet:
+  - JS/TS/JSX/TSX syntax errors (`.js .jsx .mjs .cjs .ts .tsx .mts .cts`)
+  - JSON parse errors
+  - `no-undef` (warning) and `no-unreachable` (warning)
+  It parses only and never executes project code. Lint is skipped for files that have syntax errors. ✅
+- `scans` and `findings` models plus migration `004_scans_findings.py` (applies and rolls back cleanly) ✅
+- `app/core/analyzer_runner.py`: safe extraction of analyzable files from the snapshot zip (zip-slip, size caps) into a temp dir, then a 60s-timeout subprocess ✅
+- Endpoints: `POST /projects/{id}/scans`, `GET /projects/{id}/scans/latest`, `GET /projects/{id}/findings?severity=&type=` (owner-verified; keeps the last 5 scans) ✅
+- Tests in `backend/tests/test_scans.py` (nested folders, syntax/JSON/lint findings, filters, ownership). Full backend suite: 13 passed ✅
+- Python, Semgrep, ESLint rule packs, Docker sandbox for analyzers ❌
+- Dashboard "Findings" tab and `api.ts` scan calls ❌
+
+---
+
+## Browser SDK (entry in `sdk-node`)
+⚠️ Implemented and unit-tested; not yet verified in a real browser.
+
+- `@triage/sdk/browser` (`src/browser.ts`): hooks `window` `error` and `unhandledrejection`, parses Chrome/Firefox/Safari stacks, scrubs PII, dedupes (1s window), flushes on page hide, truncates to the server's limits, caps 50 events per page ✅
+- IIFE bundle `dist/triage-browser.global.js` (esbuild, exposes `window.Triage`); `npm run build` produces it ✅
+- Scrubber shared with the Node entry (`src/scrub.ts`) ✅
+- `test-browser.js` (stubbed DOM) passes alongside `test.js` ✅
+- Demo React counter in `demo-app/public/` (error boundary, server and browser crash buttons, JSX compiled by `sucrase` so line numbers stay exact) ✅
+- Real-browser end-to-end run (demo page to backend to dashboard) ❌ not done
+- Per-key allowed-origin limits for browser API keys ❌ (a browser API key is public)
+
+---
+
+## Frontend hardening
+✅ Done:
+- Logout clears the axios token; token refresh is single-flight; refresh errors without a request config are handled
+- Login and signup redirect signed-in users to the dashboard
+- Project switching aborts in-flight requests and clears the previous project's data
+- Incidents: "Load more" pagination (`20+` badge), polling only on the Incidents tab and while the browser tab is visible, visible "updates paused" state when polling fails
+- Scrollable tab bar, tab badge padding fixed, modal animations defined, "Quick Setup" only on the API Keys tab, Vite template leftovers removed, page title and Inter font set
+
+---
+
+## Features 6–10
 ❌ Not started. Defined in `memory.md`.
 
 ---
 
 ## Known Issues / Tech Debt
+
+Resolved:
 
 | Issue | Priority | Status |
 |-------|----------|--------|
@@ -124,3 +173,29 @@
 | `DATABASE_URL` PostgreSQL switch | High | Resolved |
 | User and Project scoping | High | Resolved |
 | Dashboard UI & Token Security in memory | High | Resolved |
+| `triage` (unrelated public npm package) in `demo-app` | Medium | Resolved |
+
+Open (found in the latest code review, not yet fixed):
+
+| Area | Issue | Priority |
+|------|-------|----------|
+| Backend / snapshots | Identical re-pushes share one archive file (`{sha}.zip`). Pruning an old snapshot deletes the file the newest snapshot still points to, so a later scan fails with "archive missing" | High |
+| Backend / snapshots | Secret filtering only hides files from the tree; the raw uploaded zip, including `.env`/`.pem` files from a non-standard client, is still written to `storage/` | High |
+| Backend / snapshots | Multipart body is fully buffered before the 20MB check; there is no HTTP-level size limit on `/snapshots` | Medium |
+| Backend / snapshots | Dependency `version` is `String(100)` and `source_file` `String(300)`; a long git URL version or deep path makes the upload fail with a 500 | Medium |
+| Backend / snapshots | Deleting a project leaves its archive files in `storage/{project_id}/` | Medium |
+| Backend / CORS | `localhost:3000` was added with `allow_credentials=True`; any app on that origin can call `/auth/refresh` with the refresh cookie. `/ingest` needs a separate no-credentials CORS policy | Medium |
+| Backend / auth | Registration with an existing email races to a 500 (IntegrityError); emails are not lowercased; no server-side password length rule; login returns early for unknown users (timing leak); refresh tokens cannot be revoked and are not rotated | Medium |
+| Backend / auth | Argon2 hashing runs on the event loop and blocks other requests | Low |
+| Backend / ingest | Rate limiting runs after the DB key lookup, so requests with random invalid keys are never limited; the limiter is in-memory per process | Medium |
+| Backend / ingest | `Content-Length: abc` raises a 500 in the payload-size middleware; the chunked-body path buffers the whole body | Low |
+| Backend / ingest | Upsert never updates `environment` or `release`; fingerprint ignores both, so staging and production merge | Low |
+| Backend / fingerprint | The ID-stripping regex also rewrites ordinary words made only of letters a-f (for example "facade" and "decade" collapse to the same fingerprint) | Low |
+| Backend / manifests | `requirements.txt` lines with extras (`uvicorn[standard]==0.54.0`) lose their pinned version; nested duplicate packages in `package-lock.json` collapse to one row; `package.json` ranges are shown as exact versions in the UI | Medium |
+| Backend / analyzer | False positives: decorators and Flow-annotated files are reported as syntax errors; an exported TypeScript `enum` is reported as `no-undef` | Medium |
+| Backend / db | `echo=True` logs every SQL statement and its parameters; deleting a project loads all child rows through the ORM cascade | Low |
+| SDK / Node | Payloads are not truncated to server limits (message 2000, stack 16000), so long errors are rejected with a 422 and dropped silently; queued errors are lost on exit | Medium |
+| SDK / CLI | Hard excludes are anchored to the project root: nested `node_modules`, `dist` and `build` folders in monorepos are still archived | Medium |
+| Frontend | `navigator.clipboard` is undefined on non-secure origins, so the copy button throws; Vite HMR may not fire in Docker on Windows without `usePolling` | Low |
+| Infra | Dev-only containers (`--reload`, Vite dev server), `SECRET_KEY` in `docker-compose.yml`, `backend/triage.db` and a snapshot zip under `backend/storage/` are tracked in git | Medium |
+| Housekeeping | `memory.md` is listed in `.gitignore` but referenced as documentation; `README.md` is empty | Low |

@@ -1,7 +1,11 @@
 import axios from 'axios'
 
+export const API_BASE_URL: string = (
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+).replace(/\/$/, '')
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: API_BASE_URL,
   withCredentials: true,
 })
 
@@ -18,18 +22,38 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Single-flight refresh: concurrent 401s share one /auth/refresh call
+let refreshPromise: Promise<string> | null = null
+
+function refreshAccessToken(): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = api
+      .post<TokenResponse>('/auth/refresh')
+      .then(({ data }) => {
+        setApiToken(data.access_token)
+        return data.access_token
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise
+}
+
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config
+    // Network errors / cancelled requests may carry no config: nothing to retry
+    if (!original) return Promise.reject(error)
+
     // Only attempt refresh if this was NOT already an auth endpoint (to prevent refresh loops)
-    const isAuthEndpoint = original?.url?.includes('/auth/')
+    const isAuthEndpoint = original.url?.includes('/auth/')
     if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
       original._retry = true
       try {
-        const { data } = await api.post<TokenResponse>('/auth/refresh')
-        setApiToken(data.access_token)
-        original.headers['Authorization'] = `Bearer ${data.access_token}`
+        const token = await refreshAccessToken()
+        original.headers['Authorization'] = `Bearer ${token}`
         return api(original)
       } catch {
         setApiToken(null)
@@ -141,15 +165,16 @@ export const projectApi = {
   create: (name: string) => api.post<Project>('/projects', { name }),
   get: (id: number) => api.get<Project>(`/projects/${id}`),
   delete: (id: number) => api.delete<{ message: string; id: number }>(`/projects/${id}`),
-  listApiKeys: (projectId: number) => api.get<ApiKeyItem[]>(`/projects/${projectId}/api-keys`),
+  listApiKeys: (projectId: number, signal?: AbortSignal) =>
+    api.get<ApiKeyItem[]>(`/projects/${projectId}/api-keys`, { signal }),
   createApiKey: (projectId: number) => api.post<ApiKeyCreatedResponse>(`/projects/${projectId}/api-keys`),
   revokeApiKey: (projectId: number, keyId: number) => api.delete<{ message: string; id: number }>(`/projects/${projectId}/api-keys/${keyId}`),
-  listIncidents: (projectId: number, limit = 20, offset = 0) =>
-    api.get<Incident[]>(`/projects/${projectId}/incidents?limit=${limit}&offset=${offset}`),
-  getLatestSnapshot: (projectId: number) =>
-    api.get<Snapshot>(`/projects/${projectId}/snapshots/latest`),
-  getDependencies: (projectId: number) =>
-    api.get<Dependency[]>(`/projects/${projectId}/dependencies`),
+  listIncidents: (projectId: number, limit = 20, offset = 0, signal?: AbortSignal) =>
+    api.get<Incident[]>(`/projects/${projectId}/incidents?limit=${limit}&offset=${offset}`, { signal }),
+  getLatestSnapshot: (projectId: number, signal?: AbortSignal) =>
+    api.get<Snapshot>(`/projects/${projectId}/snapshots/latest`, { signal }),
+  getDependencies: (projectId: number, signal?: AbortSignal) =>
+    api.get<Dependency[]>(`/projects/${projectId}/dependencies`, { signal }),
 }
 
 export default api

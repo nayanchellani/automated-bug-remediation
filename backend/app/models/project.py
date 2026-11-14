@@ -15,5 +15,6 @@ class Project(Base):
     api_keys = relationship("ApiKey", back_populates="project", cascade="all, delete-orphan")
     error_events = relationship("ErrorEvent", back_populates="project", cascade="all, delete-orphan")
     snapshots = relationship("Snapshot", back_populates="project", cascade="all, delete-orphan")
+    scans = relationship("Scan", back_populates="project", cascade="all, delete-orphan")
 
 
