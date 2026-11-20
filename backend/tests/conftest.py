@@ -20,6 +20,8 @@ async def _init_engine() -> AsyncEngine:
     """Connects to PostgreSQL test DB. Fails loudly if Postgres is unavailable."""
     urls_to_try = [
         POSTGRES_TEST_URL,
+        "postgresql+asyncpg://triage:triage@db_test:5432/triage_test",
+        "postgresql+asyncpg://triage:triage@localhost:5433/triage_test",
         "postgresql+asyncpg://triage:triage@localhost:5432/triage_test",
     ]
     for url in urls_to_try:

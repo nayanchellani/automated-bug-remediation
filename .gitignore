@@ -28,7 +28,43 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Uploaded code archives and storage
+backend/storage/
+storage/
+*.zip
+*.tar.gz
+*.db
+*.sqlite
+*.sqlite3
 
 # Build outputs
 dist/
 build/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+.hypothesis/
+
+# Linting & Formatting caches
+.ruff_cache/
+.mypy_cache/
+.oxlint-cache
+.eslintcache
+
+# Logs & temporary files
+*.log
+logs/
+*.tmp
+*.temp
+*.swp
+*.swo

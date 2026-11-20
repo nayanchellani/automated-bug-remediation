@@ -15,6 +15,7 @@ import app.models.api_key  # noqa: F401
 import app.models.error_event  # noqa: F401
 import app.models.snapshot  # noqa: F401
 import app.models.dependency  # noqa: F401
+import app.models.vuln_audit  # noqa: F401
 
 config = context.config
 

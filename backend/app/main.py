@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
-from app.api.routers import auth, projects, sdk, ingest, snapshots
+from app.api.routers import auth, projects, sdk, ingest, snapshots, vuln_audit
+from app.core.config import settings
 from app.db.session import engine
 import contextlib
 
@@ -46,6 +47,7 @@ app.include_router(projects.router, prefix="/projects", tags=["projects"])
 app.include_router(sdk.router, prefix="/sdk", tags=["sdk"])
 app.include_router(ingest.router)
 app.include_router(snapshots.router)
+app.include_router(vuln_audit.router)
 
 @app.get("/health")
 async def health_check():
