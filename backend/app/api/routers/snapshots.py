@@ -117,9 +117,11 @@ async def upload_snapshot(
     )
     past_snapshots = past_snapshots_res.scalars().all()
     if len(past_snapshots) > MAX_SNAPSHOTS_TO_KEEP:
+        # Identical re-pushes share one {sha}.zip: never delete a file a kept snapshot still uses
+        kept_paths = {s.archive_path for s in past_snapshots[:MAX_SNAPSHOTS_TO_KEEP]}
         for old_snap in past_snapshots[MAX_SNAPSHOTS_TO_KEEP:]:
             try:
-                if os.path.exists(old_snap.archive_path):
+                if old_snap.archive_path not in kept_paths and os.path.exists(old_snap.archive_path):
                     os.remove(old_snap.archive_path)
             except Exception:
                 pass

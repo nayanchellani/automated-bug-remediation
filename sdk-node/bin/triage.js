@@ -7,6 +7,19 @@ const ignore = require('ignore')
 
 const MAX_ARCHIVE_SIZE = 20 * 1024 * 1024 // 20 MB
 
+function createZipArchive() {
+  if (typeof archiver === 'function') {
+    return archiver('zip', { zlib: { level: 9 } })
+  }
+  if (archiver && archiver.ZipArchive) {
+    return new archiver.ZipArchive({ zlib: { level: 9 } })
+  }
+  if (archiver && archiver.default) {
+    return archiver.default('zip', { zlib: { level: 9 } })
+  }
+  throw new Error('Unable to initialize archiver instance')
+}
+
 // Hard excludes that can NEVER be overridden
 const HARD_EXCLUDES = [
   'node_modules/**',
@@ -101,7 +114,7 @@ async function run() {
   }
 
   // 4. Create in-memory zip archive
-  const archive = archiver('zip', { zlib: { level: 9 } })
+  const archive = createZipArchive()
   const chunks = []
 
   archive.on('data', (chunk) => chunks.push(chunk))

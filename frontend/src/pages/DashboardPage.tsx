@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { useAuth } from '../context/AuthContext'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useAuth } from '../context/useAuth'
 import {
   projectApi,
-  Project,
-  ApiKeyItem,
-  ApiKeyCreatedResponse,
-  Incident,
-  Snapshot,
-  Dependency,
-  SnapshotFile,
+  type Project,
+  type ApiKeyItem,
+  type ApiKeyCreatedResponse,
+  type Incident,
+  type Snapshot,
+  type Dependency,
+  type SnapshotFile,
 } from '../lib/api'
 import {
   Key,
@@ -133,6 +133,60 @@ function FileTreeNode({ node }: { node: TreeNode }) {
   )
 }
 
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+  badge,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+  badge?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`pb-3 text-xs font-medium flex items-center gap-2 border-b-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+        active
+          ? 'border-white text-white'
+          : 'border-transparent text-neutral-400 hover:text-neutral-200'
+      }`}
+    >
+      {icon}
+      {label}
+      {badge && (
+        <span className="px-1.5 py-0.5 rounded-full bg-neutral-900 border border-[#333] text-[10px] text-neutral-300">
+          {badge}
+        </span>
+      )}
+    </button>
+  )
+}
+
+const INCIDENT_PAGE_SIZE = 20
+// Backend caps `limit` at 100 and we request one extra row to detect "has more"
+const INCIDENT_MAX_LIMIT = 99
+const INCIDENT_POLL_MS = 4000
+
+// navigator.clipboard only exists on secure origins (https / localhost); fall back to execCommand
+function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {})
+    return
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  try { document.execCommand('copy') } catch { /* nothing else to try */ }
+  document.body.removeChild(ta)
+}
+
 export default function DashboardPage() {
   const { logout } = useAuth()
   const [projects, setProjects] = useState<Project[]>([])
@@ -142,6 +196,9 @@ export default function DashboardPage() {
   // Incidents state
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [loadingIncidents, setLoadingIncidents] = useState(true)
+  const [incidentLimit, setIncidentLimit] = useState(INCIDENT_PAGE_SIZE)
+  const [hasMoreIncidents, setHasMoreIncidents] = useState(false)
+  const [incidentsError, setIncidentsError] = useState<string | null>(null)
 
   // Snapshot / Structure state
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
@@ -184,76 +241,142 @@ export default function DashboardPage() {
     }
   }, [])
 
-  const loadApiKeys = useCallback(async (projectId: number) => {
+  // Every loader takes an AbortSignal: when the project changes (or the page unmounts) the
+  // in-flight requests are cancelled and their results are ignored, so a slow response for
+  // the previous project can never overwrite the current project's data.
+  const loadApiKeys = useCallback(async (projectId: number, signal?: AbortSignal) => {
     try {
-      setLoadingKeys(true)
-      const res = await projectApi.listApiKeys(projectId)
+      const res = await projectApi.listApiKeys(projectId, signal)
+      if (signal?.aborted) return
       setApiKeys(res.data)
     } catch (err: any) {
+      if (signal?.aborted) return
       setErrorMsg(err.response?.data?.detail || 'Failed to load API keys')
     } finally {
-      setLoadingKeys(false)
+      if (!signal?.aborted) setLoadingKeys(false)
     }
   }, [])
 
-  const loadIncidents = useCallback(async (projectId: number, isInitial = false) => {
-    try {
-      if (isInitial) setLoadingIncidents(true)
-      const res = await projectApi.listIncidents(projectId)
-      setIncidents(res.data)
-    } catch (err: any) {
-      console.error('Failed to poll incidents', err)
-    } finally {
-      if (isInitial) setLoadingIncidents(false)
-    }
-  }, [])
+  const loadIncidents = useCallback(
+    async (projectId: number, limit: number, signal?: AbortSignal, isInitial = false) => {
+      try {
+        // Ask for one extra row so we know whether more incidents exist
+        const res = await projectApi.listIncidents(projectId, limit + 1, 0, signal)
+        if (signal?.aborted) return
+        setHasMoreIncidents(res.data.length > limit)
+        setIncidents(res.data.slice(0, limit))
+        setIncidentsError(null)
+      } catch (err: any) {
+        if (signal?.aborted) return
+        setIncidentsError(err.response?.data?.detail || 'Could not reach the server')
+      } finally {
+        if (isInitial && !signal?.aborted) setLoadingIncidents(false)
+      }
+    },
+    [],
+  )
 
-  const loadSnapshot = useCallback(async (projectId: number) => {
+  const loadSnapshot = useCallback(async (projectId: number, signal?: AbortSignal) => {
     try {
-      setLoadingSnapshot(true)
-      const res = await projectApi.getLatestSnapshot(projectId)
+      const res = await projectApi.getLatestSnapshot(projectId, signal)
+      if (signal?.aborted) return
       setSnapshot(res.data)
     } catch {
+      if (signal?.aborted) return
       setSnapshot(null)
     } finally {
-      setLoadingSnapshot(false)
+      if (!signal?.aborted) setLoadingSnapshot(false)
     }
   }, [])
 
-  const loadDependencies = useCallback(async (projectId: number) => {
+  const loadDependencies = useCallback(async (projectId: number, signal?: AbortSignal) => {
     try {
-      setLoadingDependencies(true)
-      const res = await projectApi.getDependencies(projectId)
+      const res = await projectApi.getDependencies(projectId, signal)
+      if (signal?.aborted) return
       setDependencies(res.data)
     } catch {
+      if (signal?.aborted) return
       setDependencies([])
     } finally {
-      setLoadingDependencies(false)
+      if (!signal?.aborted) setLoadingDependencies(false)
     }
   }, [])
 
   useEffect(() => {
-    loadProjects()
+    // eslint-disable-next-line -- initial fetch; setState happens after the await
+    void loadProjects()
   }, [loadProjects])
 
-  useEffect(() => {
-    if (selectedProject) {
-      loadApiKeys(selectedProject.id)
-      loadIncidents(selectedProject.id, true)
-      loadSnapshot(selectedProject.id)
-      loadDependencies(selectedProject.id)
+  const projectId = selectedProject?.id ?? null
+  // Controller of the current project's requests (also used by "Load more")
+  const projectControllerRef = useRef<AbortController | null>(null)
 
-      const timer = setInterval(() => {
-        loadIncidents(selectedProject.id, false)
-      }, 4000)
-      return () => clearInterval(timer)
-    } else {
-      setApiKeys([])
-      setIncidents([])
-      setSnapshot(null)
-      setDependencies([])
+  // Load everything for the selected project. Previous project's data is cleared immediately.
+  const [prevProjectId, setPrevProjectId] = useState(projectId)
+  if (prevProjectId !== projectId) {
+    // Reset during render (not in an effect) so no frame shows the previous project's data
+    setPrevProjectId(projectId)
+    setApiKeys([])
+    setIncidents([])
+    setHasMoreIncidents(false)
+    setIncidentsError(null)
+    setIncidentLimit(INCIDENT_PAGE_SIZE)
+    setSnapshot(null)
+    setDependencies([])
+    // Loading flags are raised here too, so the fetch effect never sets state synchronously
+    const loading = projectId !== null
+    setLoadingKeys(loading)
+    setLoadingIncidents(loading)
+    setLoadingSnapshot(loading)
+    setLoadingDependencies(loading)
+  }
+
+  useEffect(() => {
+    if (projectId === null) return
+
+    const controller = new AbortController()
+    projectControllerRef.current = controller
+    // Loaders only set state after an await, so nothing runs synchronously in this effect
+    // oxlint-disable-next-line react/set-state-in-effect
+    loadApiKeys(projectId, controller.signal)
+    loadIncidents(projectId, INCIDENT_PAGE_SIZE, controller.signal, true)
+    loadSnapshot(projectId, controller.signal)
+    loadDependencies(projectId, controller.signal)
+
+    return () => controller.abort()
+  }, [projectId, loadApiKeys, loadIncidents, loadSnapshot, loadDependencies])
+
+  // Poll incidents only while the Incidents tab is open and the browser tab is visible
+  useEffect(() => {
+    if (projectId === null || activeTab !== 'incidents') return
+
+    let controller: AbortController | null = null
+    const poll = () => {
+      if (document.hidden) return
+      controller?.abort()
+      controller = new AbortController()
+      loadIncidents(projectId, incidentLimit, controller.signal)
     }
-  }, [selectedProject, loadApiKeys, loadIncidents, loadSnapshot, loadDependencies])
+
+    const timer = setInterval(poll, INCIDENT_POLL_MS)
+    const onVisibilityChange = () => {
+      if (!document.hidden) poll()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      controller?.abort()
+    }
+  }, [projectId, activeTab, incidentLimit, loadIncidents])
+
+  const handleLoadMoreIncidents = () => {
+    if (projectId === null) return
+    const next = Math.min(incidentLimit + INCIDENT_PAGE_SIZE, INCIDENT_MAX_LIMIT)
+    setIncidentLimit(next)
+    loadIncidents(projectId, next, projectControllerRef.current?.signal)
+  }
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -307,7 +430,7 @@ export default function DashboardPage() {
   const handleCopyKey = () => {
     if (!createdKeyData) return
     const textToCopy = `TRIAGE_API_KEY=${createdKeyData.raw_key}`
-    navigator.clipboard.writeText(textToCopy)
+    copyText(textToCopy)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -387,67 +510,12 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-4 border-b border-[#222222]">
-          <button
-            onClick={() => setActiveTab('incidents')}
-            className={`pb-3 text-xs font-medium flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'incidents'
-                ? 'border-white text-white'
-                : 'border-transparent text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            <Activity className="w-4 h-4" />
-            Runtime Incidents
-            {incidents.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-neutral-900 border border-[#333] text-[10px] text-neutral-300">
-                {incidents.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('structure')}
-            className={`pb-3 text-xs font-medium flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'structure'
-                ? 'border-white text-white'
-                : 'border-transparent text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            Structure
-            {snapshot && (
-              <span className="px-1.5 py-0.2 rounded-full bg-neutral-900 border border-[#333] text-[10px] text-neutral-300">
-                {snapshot.file_count} files
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('libraries')}
-            className={`pb-3 text-xs font-medium flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'libraries'
-                ? 'border-white text-white'
-                : 'border-transparent text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            <Package className="w-4 h-4" />
-            Libraries
-            {dependencies.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-neutral-900 border border-[#333] text-[10px] text-neutral-300">
-                {dependencies.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('apikeys')}
-            className={`pb-3 text-xs font-medium flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'apikeys'
-                ? 'border-white text-white'
-                : 'border-transparent text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            <Key className="w-4 h-4" />
-            API Keys & Telemetry
-          </button>
+        {/* Tab Switcher (scrolls horizontally on narrow screens) */}
+        <div className="flex items-center gap-4 border-b border-[#222222] overflow-x-auto">
+          <TabButton active={activeTab === 'incidents'} onClick={() => setActiveTab('incidents')} icon={<Activity className="w-4 h-4" />} label="Runtime Incidents" badge={incidents.length > 0 ? `${incidents.length}${hasMoreIncidents ? '+' : ''}` : undefined} />
+          <TabButton active={activeTab === 'structure'} onClick={() => setActiveTab('structure')} icon={<Layers className="w-4 h-4" />} label="Structure" badge={snapshot ? `${snapshot.file_count} files` : undefined} />
+          <TabButton active={activeTab === 'libraries'} onClick={() => setActiveTab('libraries')} icon={<Package className="w-4 h-4" />} label="Libraries" badge={dependencies.length > 0 ? String(dependencies.length) : undefined} />
+          <TabButton active={activeTab === 'apikeys'} onClick={() => setActiveTab('apikeys')} icon={<Key className="w-4 h-4" />} label="API Keys & Telemetry" />
         </div>
 
         {/* Incidents Tab */}
@@ -464,8 +532,19 @@ export default function DashboardPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[11px] text-neutral-400 font-mono">Live (polling 4s)</span>
+                {incidentsError ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                    <span className="text-[11px] text-red-400 font-mono" title={incidentsError}>
+                      Updates paused, retrying...
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[11px] text-neutral-400 font-mono">Live (polling 4s)</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -542,6 +621,17 @@ export default function DashboardPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {!loadingIncidents && incidents.length > 0 && (hasMoreIncidents || incidentLimit > INCIDENT_PAGE_SIZE) && (
+                <div className="border-t border-[#222222] p-3 flex items-center justify-center gap-3 text-[11px] text-neutral-500">
+                  <span>Showing {incidents.length} incidents</span>
+                  {hasMoreIncidents && incidentLimit < INCIDENT_MAX_LIMIT && (
+                    <button onClick={handleLoadMoreIncidents} className="btn-outline text-[11px] px-3 py-1 cursor-pointer">
+                      Load more
+                    </button>
+                  )}
+                  {hasMoreIncidents && incidentLimit >= INCIDENT_MAX_LIMIT && <span>(latest {INCIDENT_MAX_LIMIT} shown)</span>}
                 </div>
               )}
             </div>
@@ -803,7 +893,7 @@ export default function DashboardPage() {
                             <td className="py-3.5 px-4">
                               {isRevoked ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-red-950/60 text-red-400 border border-red-900/50">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                                   Revoked
                                 </span>
                               ) : (
@@ -837,19 +927,21 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* Integration Guide Box */}
-        <section className="border border-[#222222] bg-[#0a0a0a] rounded-lg p-5 space-y-3">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            <Terminal className="w-4 h-4 text-neutral-300" />
-            Quick Setup
-          </div>
-          <p className="text-xs text-neutral-400 leading-relaxed">
-            Configure your environment with your generated key to begin capturing crashes:
-          </p>
-          <div className="bg-black border border-[#222] p-3 rounded font-mono text-xs text-neutral-300 select-all">
-            TRIAGE_API_KEY=tk_live_...
-          </div>
-        </section>
+        {/* Integration Guide Box (only relevant next to the API keys) */}
+        {activeTab === 'apikeys' && (
+          <section className="border border-[#222222] bg-[#0a0a0a] rounded-lg p-5 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+              <Terminal className="w-4 h-4 text-neutral-300" />
+              Quick Setup
+            </div>
+            <p className="text-xs text-neutral-400 leading-relaxed">
+              Configure your environment with your generated key to begin capturing crashes:
+            </p>
+            <div className="bg-black border border-[#222] p-3 rounded font-mono text-xs text-neutral-300 select-all">
+              TRIAGE_API_KEY=tk_live_...
+            </div>
+          </section>
+        )}
       </main>
 
       {/* New Project Modal */}

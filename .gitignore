@@ -24,10 +24,20 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local environment & secrets
+# Local environment & secrets (API keys live here)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Uploaded code archives and local databases
+backend/storage/
+storage/
+*.db
+*.sqlite
+*.sqlite3
 
 # Build outputs
 dist/

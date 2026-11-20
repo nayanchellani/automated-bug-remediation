@@ -1,4 +1,7 @@
+const fs = require('fs')
+const path = require('path')
 const express = require('express')
+const { transform } = require('sucrase')
 const { init, triageMiddleware, captureException } = require('@triage/sdk')
 
 const app = express()
@@ -14,10 +17,62 @@ init({
 
 app.use(express.json())
 
-app.get('/', (req, res) => {
+// Compiles public/Counter.jsx on request. Sucrase keeps line numbers identical to the source,
+// so browser stack traces point at the real line in Counter.jsx.
+app.get('/Counter.jsx', (req, res) => {
+  try {
+    const source = fs.readFileSync(path.join(__dirname, 'public', 'Counter.jsx'), 'utf-8')
+    const { code } = transform(source, { transforms: ['jsx'], jsxRuntime: 'classic', filePath: 'Counter.jsx' })
+    res.type('application/javascript').send(code)
+  } catch (err) {
+    console.error('Failed to compile Counter.jsx:', err.message)
+    res.status(500).type('application/javascript').send(`console.error(${JSON.stringify('Counter.jsx failed to compile: ' + err.message)})`)
+  }
+})
+
+// Browser SDK bundle (built from sdk-node: `npm run build`)
+app.get('/triage-browser.js', (req, res) => {
+  res.sendFile(path.join(path.dirname(require.resolve('@triage/sdk')), 'triage-browser.global.js'))
+})
+
+// Public browser config. NOTE: an API key in the browser is public by design.
+app.get('/triage-config.js', (req, res) => {
+  const config = {
+    apiKey: process.env.TRIAGE_API_KEY || 'tk_live_demo_key_placeholder',
+    endpoint: process.env.TRIAGE_BROWSER_ENDPOINT || process.env.TRIAGE_ENDPOINT || 'http://localhost:8000',
+    environment: 'development',
+    release: 'v1.0.0',
+  }
+  res.type('application/javascript').send(`window.__TRIAGE_CONFIG__ = ${JSON.stringify(config)};`)
+})
+
+// Serves the React counter UI (public/index.html) at "/"
+app.use(express.static(path.join(__dirname, 'public')))
+
+const COUNTER_LIMIT = 5
+
+// Counter API: the React counter posts its next value here.
+// Any value above COUNTER_LIMIT throws, so the error reaches triageMiddleware.
+app.post('/api/counter', (req, res) => {
+  const { value } = req.body || {}
+  if (value > COUNTER_LIMIT) {
+    throw new RangeError(`Counter exceeded limit of ${COUNTER_LIMIT} (got ${value})`)
+  }
+  res.json({ value })
+})
+
+// Throws a TypeError when the client asks for it (undefined.length)
+app.post('/api/counter/crash', (req, res) => {
+  const items = undefined
+  res.json({ size: items.length })
+})
+
+app.get('/info', (req, res) => {
   res.json({
     message: 'Demo App is running with @triage/sdk integration!',
     endpoints: [
+      'POST /api/counter -> Throws RangeError when value > 5',
+      'POST /api/counter/crash -> Trigger TypeError',
       'GET /crash-type-error -> Trigger TypeError',
       'GET /crash-reference-error -> Trigger ReferenceError',
       'GET /manual-capture -> Manually capture custom exception',
